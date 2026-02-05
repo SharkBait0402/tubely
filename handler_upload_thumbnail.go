@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"os"
 	"strings"
+	"mime"
+	"crypto/rand"
+	"encoding/base64"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -55,11 +58,16 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	ext:=splitType[1]
 
-	// readByte, err:=io.ReadAll(file)
-	// if err!=nil {
-	// 	respondWithError(w, http.StatusBadRequest, "Unable to read from file", err)
-	// 	return
-	// }
+	mediaType, _, err:=mime.ParseMediaType(fileType)
+	if err!=nil {
+		respondWithError(w, http.StatusBadRequest, "Unable to get file type", err)
+		return
+	}
+
+	if mediaType!="image/jpeg" && mediaType!="image/png" {
+		respondWithError(w, http.StatusUnauthorized, "Incorrect file type was submitted", nil)
+		return
+	}
 
 	videoData, err := cfg.db.GetVideo(videoID)
 	if err!=nil {
@@ -67,7 +75,12 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	fileName:=fmt.Sprintf("%s.%s", videoIDString, ext)
+	key:=make([]byte, 32)
+	rand.Read(key)
+
+	nameStr:=base64.RawURLEncoding.EncodeToString(key)
+
+	fileName:=fmt.Sprintf("%s.%s", nameStr, ext)
 
 	savePath:=filepath.Join(cfg.assetsRoot, fileName)
 
