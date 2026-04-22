@@ -93,10 +93,7 @@ func main() {
 		log.Fatal("Could not create config")
 	}
 
-	s3CLient, err:=s3.NewFromConfig(s3Config)
-	if err!= nil {
-		log.Fatal("could not create s3 client")
-	}
+	s3Client:=s3.NewFromConfig(s3Config)
 
 	cfg := apiConfig{
 		db:               db,
