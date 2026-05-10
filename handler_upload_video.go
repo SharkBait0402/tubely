@@ -10,11 +10,72 @@ import (
 	"crypto/rand"
 	"mime"
 	"fmt"
+	"bytes"
+	"os/exec"
+	"encoding/json"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 )
+
+func getVideoAspectRatio(filepath string) (string, error) {
+
+	cmd:=exec.Command("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filepath)
+
+	buf:=&bytes.Buffer{}
+
+	cmd.Stdout=buf
+
+	err:=cmd.Run()
+	if err!=nil {
+		return "", err
+	}
+
+	type Aspect struct {
+		Width int `json:"width"`
+		Height int `json:"height"`
+	}
+
+	type Video struct {
+		Streams []Aspect `json:"streams"`
+	}
+
+	var a Video
+	
+	err=json.Unmarshal(buf.Bytes(), &a)
+	if err != nil {
+		return "", err
+	}
+	
+	hor:=177
+	ver:=56
+
+	rat:=(a.Streams[0].Width*100)/a.Streams[0].Height
+
+	if rat == hor {
+		return "16:9", nil
+	} else if rat == ver {
+		return "9:16", nil
+	} else {
+		return "other", nil
+	}
+
+}
+
+func processVideoForFastStart(filepath string) (string, error) {
+	 newPath:=filepath + ".processing"
+
+	cmd:=exec.Command("ffmpeg", "-i", filepath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", newPath)
+
+	err := cmd.Run()
+	if err!=nil {
+		return "", err
+	}
+
+	return newPath, nil
+
+}
 
 func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request) {
 	r.Body=http.MaxBytesReader(w, r.Body, 1 << 30)
@@ -85,18 +146,39 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	aspect, err:=getVideoAspectRatio(tmp.Name())
+
+	prefix:="other"
+
+	if aspect == "16:9" {
+		prefix="landscape"
+	} else if aspect == "9:16" {
+		prefix="portrait"
+	}
 
 	key:=make([]byte, 32)
 	rand.Read(key)
 
 	encKey := hex.EncodeToString(key)
 
-	objKey:= encKey + ".mp4"
+	objKey:= prefix + "/" + encKey + ".mp4"
+
+	newPath, err:=processVideoForFastStart(tmp.Name())
+	if err!=nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to make file fast start", err)
+		return
+	}
+
+	newFile, err:=os.Open(newPath)
+	if err!=nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to make new processed file", err)
+		return
+	}
 
 	objParams:=&s3.PutObjectInput{
 		Bucket: aws.String(cfg.s3Bucket),
 		Key: aws.String(objKey),
-		Body: tmp,
+		Body: newFile,
 		ContentType: aws.String(mediaType),
 	}
 
