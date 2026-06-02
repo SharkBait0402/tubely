@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"os/exec"
 	"encoding/json"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -74,6 +75,12 @@ func processVideoForFastStart(filepath string) (string, error) {
 	}
 
 	return newPath, nil
+
+}
+
+func generatePresignedURL(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
+	newClient:=s3.NewPresignClient(s3Client)
+
 
 }
 
@@ -181,6 +188,10 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		Body: newFile,
 		ContentType: aws.String(mediaType),
 	}
+
+	bucket:=cfg.s3Bucket
+
+	urlString:=strings.Join([bucket, objKey], ",")
 
 	_, err = cfg.s3Client.PutObject(context.Background(), objParams)
 	if err != nil {
